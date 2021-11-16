@@ -600,7 +600,7 @@ def train(args, model, loss_fn, m_optim, m_scheduler, metric, train_loader, dev_
         if force_break:
             break
     state_dict = torch.load(args.save + "_step-{}.bin".format(best_step))
-    logger.info("inferencing... ...checkpoint:{}".format(global_step+1, mes, best_mes))
+    logger.info("inferencing... ...checkpoint:{}".format(best_step))
     if args.model == 'bert':
         st = {}
         for k in state_dict:
