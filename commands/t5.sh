@@ -1,15 +1,15 @@
 set -ex
 export CUDA_VISIBLE_DEVICES=1,2,3,7
-LR=1e-1
+LR=1
 
-MAX_STEPS=80000
-EPOCH=3
+MAX_STEPS=3000
+EPOCH=60000
 
-Q='full'
-LOG_STEP=100
-EVAL_EVERY=1000
+Q=50
+LOG_STEP=100 
+EVAL_EVERY=500
 
-BATCH_SIZE=8
+BATCH_SIZE=16
 NEG=1
 
 
@@ -23,12 +23,14 @@ python -m torch.distributed.launch \
         -model t5  \
         -qrels /data/private/yushi/collections/msmarco-passage/qrels.train.tsv     \
         -train /data/private/huxiaomeng/promptir/dataset/msmarco/train/$Q-q-$NEG-n.jsonl \
-        -dev /data/private/huxiaomeng/promptir/dataset/msmarco/dev/500-q.jsonl  \
+        -dev /data/private/huxiaomeng/promptir/dataset/msmarco/dev/50-q.jsonl  \
+        -test /data/private/huxiaomeng/promptir/dataset/msmarco/test/all-q.jsonl  \
         -max_input 80000000  \
         -save /data/private/huxiaomeng/promptir/checkpoints/t5-large-soft-prompt/q$Q-n-$NEG/  \
         -vocab $ckpt          \
         -pretrain $ckpt  \
         -res /data/private/huxiaomeng/promptir/results/t5-large-soft-prompt/q$Q-n-$NEG.trec  \
+        -test_res /data/private/huxiaomeng/promptir/results/t5-large-soft-prompt/test_q$Q-n-$NEG.trec  \
         -metric mrr_cut_10  \
         -max_query_len 76  \
         -max_doc_len 290  \

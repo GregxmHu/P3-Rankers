@@ -28,6 +28,71 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # writer = SummaryWriter(log_dir='logs')
 
+def test(args, model, metric, test_loader, device,tokenizer):
+    rst_dict = {}
+    for test_batch in tqdm(test_loader, disable=args.local_rank not in [-1, 0]):
+        if args.model=="t5":
+            query_id, doc_id, label = test_batch['query_id'], test_batch['doc_id'], test_batch['label_id']
+        else:
+            query_id, doc_id, label = test_batch['query_id'], test_batch['doc_id'], test_batch['label']
+        with torch.no_grad():
+            if args.original_t5:
+                batch_logits = model(                        
+                        input_ids=test_batch['input_ids'].to(device), 
+                        attention_mask=test_batch['attention_mask'].to(device), 
+                        labels=test_batch["labels"].to(device),
+                        return_dict=True
+                    ).logits
+                batch_score=batch_logits[:,0,[6136,1176]]
+                #print(batch_score.shape)
+            elif args.model== 't5':
+                batch_score=model(
+                        input_ids=test_batch['input_ids'].to(device), 
+                        attention_mask=test_batch['attention_mask'].to(device),
+                        query_ids=test_batch['query_ids'].to(device), 
+                        doc_ids=test_batch['doc_ids'].to(device),
+                        query_attention_mask=test_batch['query_attention_mask'].to(device),
+                        doc_attention_mask=test_batch['doc_attention_mask'].to(device)
+                )
+            elif args.model == 'bert':
+                if args.task.startswith("prompt"):
+                    batch_score, _ = model(test_batch['input_ids'].to(device), test_batch['mask_pos'].to(device),test_batch['input_mask'].to(device), test_batch['segment_ids'].to(device))
+                else:
+                    batch_score, _ = model(test_batch['input_ids'].to(device), test_batch['input_mask'].to(device), test_batch['segment_ids'].to(device))
+            elif args.model == 'roberta':
+                if args.task.startswith("prompt"):
+                    batch_score, _ = model(test_batch['input_ids'].to(device), test_batch['mask_pos'].to(device), test_batch['input_mask'].to(device))
+                else:
+                    batch_score, _ = model(test_batch['input_ids'].to(device), test_batch['input_mask'].to(device))
+
+            elif args.model == 'edrm':
+                batch_score, _ = model(test_batch['query_wrd_idx'].to(device), test_batch['query_wrd_mask'].to(device),
+                                       test_batch['doc_wrd_idx'].to(device), test_batch['doc_wrd_mask'].to(device),
+                                       test_batch['query_ent_idx'].to(device), test_batch['query_ent_mask'].to(device),
+                                       test_batch['doc_ent_idx'].to(device), test_batch['doc_ent_mask'].to(device),
+                                       test_batch['query_des_idx'].to(device), test_batch['doc_des_idx'].to(device))
+            else:
+                batch_score, _ = model(test_batch['query_idx'].to(device), test_batch['query_mask'].to(device),
+                                       test_batch['doc_idx'].to(device), test_batch['doc_mask'].to(device))
+            
+            if args.task == 'classification' or args.task == "prompt_classification":
+                batch_score = batch_score.softmax(dim=-1)[:, 1].squeeze(-1)
+            elif args.task == "prompt_ranking":
+                batch_score = batch_score[:, 0]
+            
+            batch_score = batch_score.detach().cpu().tolist()
+            for (q_id, d_id, b_s, l) in zip(query_id, doc_id, batch_score, label):
+                if q_id not in rst_dict:
+                    rst_dict[q_id] = {}
+                if d_id not in rst_dict[q_id] or b_s > rst_dict[q_id][d_id][0]:
+                    rst_dict[q_id][d_id] = [b_s, l]
+    return rst_dict
+
+
+
+
+
+
 def dev(args, model, metric, dev_loader, device,tokenizer):
     rst_dict = {}
     for dev_batch in tqdm(dev_loader, disable=args.local_rank not in [-1, 0]):
@@ -300,8 +365,9 @@ def train_reinfoselect(args, model, policy, loss_fn, m_optim, m_scheduler, p_opt
                 log_prob_ps = []
                 log_prob_ns = []
 
-def train(args, model, loss_fn, m_optim, m_scheduler, metric, train_loader, dev_loader, device, train_sampler=None, tokenizer=None):
+def train(args, model, loss_fn, m_optim, m_scheduler, metric, train_loader, dev_loader, test_loader,device, train_sampler=None, tokenizer=None):
     best_mes = 0.0
+    best_step=0
     global_step = 0 # steps that outside epoches
     force_break = False
     for epoch in range(args.epoch):
@@ -507,6 +573,7 @@ def train(args, model, loss_fn, m_optim, m_scheduler, metric, train_loader, dev_
 
                         if mes>best_mes:
                             best_mes=mes
+                            best_step=global_step+1
                             ls=os.listdir(args.save)
                             for i in ls:
                                 item_path=os.path.join(args.save,i)
@@ -515,9 +582,9 @@ def train(args, model, loss_fn, m_optim, m_scheduler, metric, train_loader, dev_
                                 logger.info('save model')
                                 os.remove(item_path)
                             if hasattr(model, "module"):
-                                torch.save(model.module.state_dict(), args.save + "_step-{}.bin".format(global_step+1))
+                                torch.save(model.module.state_dict(), args.save + "_step-{}.bin".format(best_step))
                             else:
-                                torch.save(model.state_dict(), args.save + "_step-{}.bin".format(global_step+1))
+                                torch.save(model.state_dict(), args.save + "_step-{}.bin".format(best_step))
                         # if args.n_gpu > 1:
                         #     torch.save(model.module.state_dict(), args.save + "_step-{}.bin".format(global_step+1))
                         # else:
@@ -532,8 +599,36 @@ def train(args, model, loss_fn, m_optim, m_scheduler, metric, train_loader, dev_
                 
         if force_break:
             break
+    state_dict = torch.load(args.save + "_step-{}.bin".format(best_step))
+    logger.info("inferencing... ...checkpoint:{}".format(global_step+1, mes, best_mes))
+    if args.model == 'bert':
+        st = {}
+        for k in state_dict:
+            if k.startswith('bert'):
+                st['_model'+k[len('bert'):]] = state_dict[k]
+            elif k.startswith('classifier'):
+                st['_dense'+k[len('classifier'):]] = state_dict[k]
+            else:
+                st[k] = state_dict[k]
+        model.load_state_dict(st)
+    else:
+        model.load_state_dict(state_dict)
+    model.eval()
+    with torch.no_grad():
+        rst_dict = test(args, model, metric, test_loader, device,tokenizer=tokenizer)
+
     if args.local_rank != -1:
+        # distributed mode, save dicts and merge
+        om.utils.save_trec(args.test_res + "_rank_{:03}".format(args.local_rank), rst_dict)
         dist.barrier()
+        # if is_first_worker():
+        if args.local_rank in [-1,0]:
+            merge_resfile(args.test_res + "_rank_*", args.test_res)
+
+    else:
+        om.utils.save_trec(args.test_res, rst_dict)
+    #if args.local_rank != -1:
+        
 
 def set_seed(seed):
     random.seed(seed)
@@ -553,12 +648,14 @@ def main():
     parser.add_argument('-max_input', type=int, default=1280000)
     parser.add_argument('-save', type=str, default='./checkpoints/bert.bin')
     parser.add_argument('-dev', action=om.utils.DictOrStr, default='./data/dev_toy.jsonl')
+    parser.add_argument('-test', action=om.utils.DictOrStr, default='./data/dev_toy.jsonl')
     parser.add_argument('-qrels', type=str, default='./data/qrels_toy')
     parser.add_argument('-vocab', type=str, default='allenai/scibert_scivocab_uncased')
     parser.add_argument('-ent_vocab', type=str, default='')
     parser.add_argument('-pretrain', type=str, default='allenai/scibert_scivocab_uncased')
     parser.add_argument('-checkpoint', type=str, default=None)
     parser.add_argument('-res', type=str, default='./results/bert.trec')
+    parser.add_argument('-test_res', type=str, default='./results/bert.trec')
     parser.add_argument('-metric', type=str, default='ndcg_cut_10')
     parser.add_argument('-mode', type=str, default='cls')
     parser.add_argument('-n_kernels', type=int, default=21)
@@ -630,6 +727,13 @@ def main():
                 max_input=args.max_input,
                 template=args.template
             )
+        logger.info("reading test data...")
+        test_set = om.data.datasets.t5Dataset(
+                dataset=args.test,
+                tokenizer=tokenizer,
+                max_input=args.max_input,
+                template=args.template
+            )
     elif args.model == 'bert':
         if tokenizer is None:
             tokenizer = AutoTokenizer.from_pretrained(args.vocab)
@@ -677,6 +781,28 @@ def main():
                task=args.task,
                template=args.template
             )
+        logger.info('reading test data...')
+        if args.maxp:
+            test_set = om.data.datasets.BertMaxPDataset(
+                dataset=args.test,
+                tokenizer=tokenizer,
+                mode='test',
+                query_max_len=args.max_query_len,
+                doc_max_len=args.max_doc_len,
+                max_input=args.max_input,
+                task=args.task
+            )
+        else:
+            test_set = om.data.datasets.BertDataset(
+                dataset=args.test,
+                tokenizer=tokenizer,
+                mode='test',
+                query_max_len=args.max_query_len,
+                doc_max_len=args.max_doc_len,
+                max_input=args.max_input,
+               task=args.task,
+               template=args.template
+            )
     elif args.model == 'roberta':
         if tokenizer is None:
             tokenizer = AutoTokenizer.from_pretrained(args.vocab)
@@ -696,6 +822,17 @@ def main():
             dataset=args.dev,
             tokenizer=tokenizer,
             mode='dev',
+            query_max_len=args.max_query_len,
+            doc_max_len=args.max_doc_len,
+            max_input=args.max_input,
+            task=args.task,
+            template=args.template
+        )
+        print('reading test data...')
+        test_set = om.data.datasets.RobertaDataset(
+            dataset=args.test,
+            tokenizer=tokenizer,
+            mode='test',
             query_max_len=args.max_query_len,
             doc_max_len=args.max_doc_len,
             max_input=args.max_input,
@@ -735,6 +872,19 @@ def main():
             max_input=args.max_input,
             task=args.task
         )
+        print('reading test data...')
+        test_set = om.data.datasets.EDRMDataset(
+            dataset=args.test,
+            wrd_tokenizer=tokenizer,
+            ent_tokenizer=ent_tokenizer,
+            mode='test',
+            query_max_len=args.max_query_len,
+            doc_max_len=args.max_doc_len,
+            des_max_len=20,
+            max_ent_num=3,
+            max_input=args.max_input,
+            task=args.task
+        )
     else:
         tokenizer = om.data.tokenizers.WordTokenizer(
             pretrained=args.vocab
@@ -759,7 +909,16 @@ def main():
             max_input=args.max_input,
             task=args.task
         )
-
+        print('reading test data...')
+        test_set = om.data.datasets.Dataset(
+            dataset=args.test,
+            tokenizer=tokenizer,
+            mode='test',
+            query_max_len=args.max_query_len,
+            doc_max_len=args.max_doc_len,
+            max_input=args.max_input,
+            task=args.task
+        )
 
     if args.local_rank != -1:
         # train_sampler = DistributedSampler(train_set, args.world_size, args.local_rank)
@@ -780,6 +939,14 @@ def main():
             num_workers=8,
             sampler=dev_sampler
         )
+        test_sampler = DistributedEvalSampler(test_set)
+        test_loader = om.data.DataLoader(
+            dataset=test_set,
+            batch_size=args.batch_size * 16 if args.dev_eval_batch_size <= 0 else args.dev_eval_batch_size,
+            shuffle=False,
+            num_workers=8,
+            sampler=test_sampler
+        )
         dist.barrier()
 
     else:
@@ -791,6 +958,12 @@ def main():
         )
         dev_loader = om.data.DataLoader(
             dataset=dev_set,
+            batch_size=args.dev_eval_batch_size,
+            shuffle=False,
+            num_workers=0
+        )
+        test_loader = om.data.DataLoader(
+            dataset=test_set,
             batch_size=args.dev_eval_batch_size,
             shuffle=False,
             num_workers=0
@@ -1000,9 +1173,9 @@ def main():
 
     logger.info(args)
     if args.reinfoselect:
-        train_reinfoselect(args, model, policy, loss_fn, m_optim, m_scheduler, p_optim, metric, train_loader, dev_loader, device)
+        train_reinfoselect(args, model, policy, loss_fn, m_optim, m_scheduler, p_optim, metric, train_loader, dev_loader,test_loader, device)
     else:
-        train(args, model, loss_fn, m_optim, m_scheduler, metric, train_loader, dev_loader, device, train_sampler=train_sampler, tokenizer=tokenizer)
+        train(args, model, loss_fn, m_optim, m_scheduler, metric, train_loader, dev_loader, test_loader,device, train_sampler=train_sampler, tokenizer=tokenizer)
     # print("outside train. {}".format(args.local_rank))
     if args.local_rank != -1:
         dist.barrier()
