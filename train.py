@@ -618,12 +618,12 @@ def train(args, model, loss_fn, m_optim, m_scheduler, metric, train_loader, dev_
         model.eval()
         with torch.no_grad():
             rst_dict = test(args, model, metric, test_loader, device,tokenizer=tokenizer)
-        om.utils.save_trec(args.res + "_rank_{:03}".format(args.local_rank), rst_dict)
+        om.utils.save_trec(args.test_res + "_rank_{:03}".format(args.local_rank), rst_dict)
         logger.info("inference finished...at gpu:{}".format(args.local_rank))
         dist.barrier()
         # if is_first_worker():
         if args.local_rank in [-1,0]:
-            merge_resfile(args.res + "_rank_*", args.res)
+            merge_resfile(args.test_res + "_rank_*", args.test_res)
         dist.barrier()
 
     return 
@@ -682,6 +682,9 @@ def main():
     parser.add_argument("--pos_word", type=str, default=" relevant")
     parser.add_argument("--neg_word", type=str, default=" irrelevant")
     parser.add_argument("--soft_prompt", action="store_true")
+    parser.add_argument("--infix",type=str,default=None)
+    parser.add_argument("--suffix",type=str,default=None)
+    parser.add_argument("--prefix",type=str,default=None)
     parser.add_argument("--soft_sentence",type=str,default=None)
     parser.add_argument("--original_t5", action="store_true")
     parser.add_argument("--max_steps", type=int)
@@ -970,7 +973,7 @@ def main():
         train_sampler = None
 
     if args.model == "t5":
-        model = om.models.t5(args.pretrain,args.soft_prompt,args.soft_sentence) if not args.original_t5 else T5ForConditionalGeneration.from_pretrained(args.pretrain)
+        model = om.models.t5(args.pretrain,args.soft_prompt,args.soft_sentence,args.prefix,args.infix,args.suffix) if not args.original_t5 else T5ForConditionalGeneration.from_pretrained(args.pretrain)
     elif args.model == 'bert' or args.model == 'roberta':
         if args.maxp:
             model = om.models.BertMaxP(

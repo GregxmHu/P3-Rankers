@@ -2,12 +2,12 @@ set -ex
 export CUDA_VISIBLE_DEVICES=0,1,2,3
 LR=1
 
-MAX_STEPS=1
+MAX_STEPS=3000
 EPOCH=60000
 
-Q=1000
-LOG_STEP=1
-EVAL_EVERY=1
+Q=50
+LOG_STEP=100
+EVAL_EVERY=100
 
 BATCH_SIZE=8
 NEG=1
@@ -23,8 +23,8 @@ python -m torch.distributed.launch \
         -model t5  \
         -qrels /data/private/yushi/collections/msmarco-passage/qrels.train.tsv     \
         -train /data/private/huxiaomeng/promptir/dataset/msmarco/train/$Q-q-$NEG-n.jsonl \
-        -dev /data/private/huxiaomeng/promptir/dataset/msmarco/dev/5-q.jsonl  \
-        -test /data/private/huxiaomeng/promptir/dataset/msmarco/dev/500-q.jsonl  \
+        -dev /data/private/huxiaomeng/promptir/dataset/msmarco/dev/50-q.jsonl  \
+        -test /data/private/huxiaomeng/promptir/dataset/msmarco/test/all-q.jsonl  \
         -max_input 80000000  \
         -vocab $ckpt          \
         -pretrain $ckpt  \
@@ -47,10 +47,12 @@ python -m torch.distributed.launch \
         -gradient_accumulation_steps 1 \
         --soft_sentence=""  \
         --template="Query: <q> Document: <d> Relevant: "    \
-        --soft_prompt
+        --soft_prompt   \
+        --prefix='[16107, 10, 2588, 8, 20208, 344, 3, 27569, 11, 11167, 5,3,27569,10]'   \
+        --infix='[11167,10]'    \
+        --suffix='[31484,17,10,1]'   \
         #--original_t5 \
         #--soft_prompt   \
         
-       
-
+    
 

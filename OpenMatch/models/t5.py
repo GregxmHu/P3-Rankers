@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import pickle
 class t5(nn.Module):
-    def __init__(self,checkpoint:str,soft_prompt:bool,soft_sentence:int):
+    def __init__(self,checkpoint:str,soft_prompt:bool,soft_sentence:int,prefix:str,infix:str,suffix:str):
         super(t5,self).__init__()
         self.config=T5Config.from_pretrained(checkpoint)       
         self.t5=T5ForConditionalGeneration.from_pretrained(checkpoint,config=self.config)  
@@ -13,13 +13,20 @@ class t5(nn.Module):
         self.soft_embedding_layer=None   
         self.normal_embedding_layer=self.t5.get_input_embeddings()
         self.soft_prompt=soft_prompt
-        
         if soft_prompt: 
             
-            self.prefix_soft_index,self.infix_soft_index,self.suffix_soft_index=[3,27569,10],[11167,10],[31484,17,10,1]
-            self.prefix_soft_embedding_layer=nn.Embedding(3,self.config.hidden_size)
-            self.infix_soft_embedding_layer=nn.Embedding(2,self.config.hidden_size)
-            self.suffix_soft_embedding_layer=nn.Embedding(4,self.config.hidden_size)
+            self.prefix_soft_index,self.infix_soft_index,self.suffix_soft_index=eval(prefix),eval(infix),eval(suffix)
+            #[3,27569,10],[11167,10],[31484,17,10,1]
+            self.p_num,self.i_num,self.s_num=len(self.prefix_soft_index),len(self.infix_soft_index),len(self.suffix_soft_index)
+            self.prefix_soft_embedding_layer=nn.Embedding(
+                self.p_num,self.config.hidden_size
+                )
+            self.infix_soft_embedding_layer=nn.Embedding(
+                self.i_num,self.config.hidden_size
+                )
+            self.suffix_soft_embedding_layer=nn.Embedding(
+                self.s_num,self.config.hidden_size
+                )
             
             self.prefix_soft_embedding_layer.weight.data=torch.stack(
                 [self.normal_embedding_layer.weight.data[i,:].clone().detach().requires_grad_(True) for i in self.prefix_soft_index]
@@ -30,9 +37,9 @@ class t5(nn.Module):
             self.suffix_soft_embedding_layer.weight.data=torch.stack(
                 [self.normal_embedding_layer.weight.data[i,:].clone().detach().requires_grad_(True) for i in self.suffix_soft_index]
                 )
-            self.prefix_soft_ids=torch.tensor(range(3))
-            self.infix_soft_ids=torch.tensor(range(2))
-            self.suffix_soft_ids=torch.tensor(range(4))
+            self.prefix_soft_ids=torch.tensor(range(self.p_num))
+            self.infix_soft_ids=torch.tensor(range(self.i_num))
+            self.suffix_soft_ids=torch.tensor(range(self.s_num))
             for param in self.t5.parameters():
                 param.requires_grad_(False)
         
@@ -59,9 +66,9 @@ class t5(nn.Module):
                 dim=1
                 )
             
-            prefix_soft_attention_mask=torch.ones(batch_size,3).to(input_ids.device)
-            infix_soft_attention_mask=torch.ones(batch_size,2).to(input_ids.device)
-            suffix_soft_attention_mask=torch.ones(batch_size,4).to(input_ids.device)
+            prefix_soft_attention_mask=torch.ones(batch_size,self.p_num).to(input_ids.device)
+            infix_soft_attention_mask=torch.ones(batch_size,self.i_num).to(input_ids.device)
+            suffix_soft_attention_mask=torch.ones(batch_size,self.s_num).to(input_ids.device)
             
             attention_mask=torch.cat(
                 [prefix_soft_attention_mask,query_attention_mask,infix_soft_attention_mask,doc_attention_mask,suffix_soft_attention_mask],
