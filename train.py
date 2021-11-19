@@ -533,11 +533,14 @@ def train(args, model, loss_fn, m_optim, m_scheduler, metric, train_loader, dev_
                 # print("step")
 
                 if args.logging_step > 0 and ((global_step+1) % args.logging_step == 0 or (args.test_init_log and global_step==0)):
+                    dist.barrier()
                     if args.local_rank in [-1, 0]:
                         logger.info("training gpu {}:,  global step: {}, local step: {}, loss: {}".format(args.local_rank,global_step+1, step+1, avg_loss/args.logging_step))
                         if args.tb is not None:
                             args.tb.add_scalar("loss", avg_loss/args.logging_step, global_step + 1)
                             args.tb.add_scalar("epochs", epoch + 1, global_step + 1)
+                        
+                    dist.barrier()
                     avg_loss = 0.0 
 
                 if (global_step+1) % args.eval_every == 0 or (args.test_init_log and global_step==0):                
@@ -573,7 +576,7 @@ def train(args, model, loss_fn, m_optim, m_scheduler, metric, train_loader, dev_
 
                         if mes>best_mes:
                             best_mes=mes
-                            best_step=global_step+1
+                            #best_step=global_step+1
                             ls=os.listdir(args.save)
                             for i in ls:
                                 item_path=os.path.join(args.save,i)
@@ -581,10 +584,12 @@ def train(args, model, loss_fn, m_optim, m_scheduler, metric, train_loader, dev_
                                 logger.info('remove_model at step {}'.format(global_step+1))
                                 logger.info('save model')
                                 os.remove(item_path)
+                            #if args.soft_prompt:
+                                #model.module.save_prompts(args.save+"_step-{}.pickle".format(global_step+1))
                             if hasattr(model, "module"):
-                                torch.save(model.module.state_dict(), args.save + "_step-{}.bin".format(best_step))
+                                torch.save(model.module.state_dict(), args.save + "_step-{}.bin".format(global_step+1))
                             else:
-                                torch.save(model.state_dict(), args.save + "_step-{}.bin".format(best_step))
+                                torch.save(model.state_dict(), args.save + "_step-{}.bin".format(global_step+1))
                         # if args.n_gpu > 1:
                         #     torch.save(model.module.state_dict(), args.save + "_step-{}.bin".format(global_step+1))
                         # else:
@@ -599,35 +604,29 @@ def train(args, model, loss_fn, m_optim, m_scheduler, metric, train_loader, dev_
                 
         if force_break:
             break
-    state_dict = torch.load(args.save + "_step-{}.bin".format(best_step))
-    logger.info("inferencing... ...checkpoint:{}".format(best_step))
-    if args.model == 'bert':
-        st = {}
-        for k in state_dict:
-            if k.startswith('bert'):
-                st['_model'+k[len('bert'):]] = state_dict[k]
-            elif k.startswith('classifier'):
-                st['_dense'+k[len('classifier'):]] = state_dict[k]
-            else:
-                st[k] = state_dict[k]
-        model.load_state_dict(st)
-    else:
-        model.load_state_dict(state_dict)
-    model.eval()
-    with torch.no_grad():
-        rst_dict = test(args, model, metric, test_loader, device,tokenizer=tokenizer)
-
+    
     if args.local_rank != -1:
-        # distributed mode, save dicts and merge
-        om.utils.save_trec(args.test_res + "_rank_{:03}".format(args.local_rank), rst_dict)
+        dist.barrier()
+        logger.info("load best checkpoint....")
+        dist.barrier()
+        for file in os.listdir(args.save):
+            checkpoint=os.path.join(args.save,file)
+            state=torch.load(checkpoint,map_location=device)
+            model.module.load_state_dict(state)
+        dist.barrier()
+        logger.info("doing inference.... at gpu:{}".format(args.local_rank))
+        model.eval()
+        with torch.no_grad():
+            rst_dict = test(args, model, metric, test_loader, device,tokenizer=tokenizer)
+        om.utils.save_trec(args.res + "_rank_{:03}".format(args.local_rank), rst_dict)
+        logger.info("inference finished...at gpu:{}".format(args.local_rank))
         dist.barrier()
         # if is_first_worker():
         if args.local_rank in [-1,0]:
-            merge_resfile(args.test_res + "_rank_*", args.test_res)
+            merge_resfile(args.res + "_rank_*", args.res)
+        dist.barrier()
 
-    else:
-        om.utils.save_trec(args.test_res, rst_dict)
-    #if args.local_rank != -1:
+    return 
         
 
 def set_seed(seed):
@@ -1179,12 +1178,14 @@ def main():
     # print("outside train. {}".format(args.local_rank))
     if args.local_rank != -1:
         dist.barrier()
+    return args
     # print("End. {}".format(args.local_rank))
     
     # print("End2. {}".format(args.local_rank))
 
 if __name__ == "__main__":
     main()
+    os._exit(0)
     # dist.destroy_process_group()
     # print("End")
     # exit(0)
