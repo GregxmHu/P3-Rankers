@@ -56,12 +56,21 @@ def test(args, model, metric, test_loader, device,tokenizer):
                 )
             elif args.model == 'bert':
                 if args.task.startswith("prompt"):
-                    batch_score, _ = model(test_batch['input_ids'].to(device), test_batch['mask_pos'].to(device),test_batch['input_mask'].to(device), test_batch['segment_ids'].to(device))
+                    batch_score, _ = model(
+                        test_batch['input_ids'].to(device),  test_batch['query_ids'].to(device), test_batch['doc_ids'].to(device), 
+                        test_batch['mask_pos'].to(device),
+                        test_batch['input_mask'].to(device), test_batch['query_input_mask'].to(device),test_batch['doc_input_mask'].to(device),
+                        test_batch['segment_ids'].to(device)
+                        )
                 else:
                     batch_score, _ = model(test_batch['input_ids'].to(device), test_batch['input_mask'].to(device), test_batch['segment_ids'].to(device))
             elif args.model == 'roberta':
                 if args.task.startswith("prompt"):
-                    batch_score, _ = model(test_batch['input_ids'].to(device), test_batch['mask_pos'].to(device), test_batch['input_mask'].to(device))
+                    batch_score, _ = model(
+                        test_batch['input_ids'].to(device), test_batch['query_ids'].to(device), test_batch['doc_ids'].to(device), 
+                        test_batch['mask_pos'].to(device), 
+                        test_batch['input_mask'].to(device),test_batch['query_input_mask'].to(device),test_batch['doc_input_mask'].to(device)
+                        )
                 else:
                     batch_score, _ = model(test_batch['input_ids'].to(device), test_batch['input_mask'].to(device))
 
@@ -121,12 +130,21 @@ def dev(args, model, metric, dev_loader, device,tokenizer):
                 )
             elif args.model == 'bert':
                 if args.task.startswith("prompt"):
-                    batch_score, _ = model(dev_batch['input_ids'].to(device), dev_batch['mask_pos'].to(device),dev_batch['input_mask'].to(device), dev_batch['segment_ids'].to(device))
+                     batch_score, _ = model(
+                        dev_batch['input_ids'].to(device),dev_batch['query_ids'].to(device),dev_batch['doc_ids'].to(device), 
+                        dev_batch['mask_pos'].to(device),
+                        dev_batch['input_mask'].to(device),dev_batch['query_input_mask'].to(device),dev_batch['doc_input_mask'].to(device),
+                        dev_batch['segment_ids'].to(device)
+                        )
                 else:
                     batch_score, _ = model(dev_batch['input_ids'].to(device), dev_batch['input_mask'].to(device), dev_batch['segment_ids'].to(device))
             elif args.model == 'roberta':
                 if args.task.startswith("prompt"):
-                    batch_score, _ = model(dev_batch['input_ids'].to(device), dev_batch['mask_pos'].to(device), dev_batch['input_mask'].to(device))
+                    batch_score, _ = model(
+                        dev_batch['input_ids'].to(device), dev_batch['query_ids'].to(device), dev_batch['doc_ids'].to(device), 
+                        dev_batch['mask_pos'].to(device), 
+                        dev_batch['input_mask'].to(device), dev_batch['query_input_mask'].to(device), dev_batch['doc_input_mask'].to(device)
+                        )
                 else:
                     batch_score, _ = model(dev_batch['input_ids'].to(device), dev_batch['input_mask'].to(device))
 
@@ -418,7 +436,12 @@ def train(args, model, loss_fn, m_optim, m_scheduler, metric, train_loader, dev_
                         # input()
                 elif args.task == "prompt_classification":
                     with sync_context():
-                        batch_score, masked_token_logits = model(train_batch['input_ids'].to(device), train_batch['mask_pos'].to(device), train_batch['input_mask'].to(device), train_batch['segment_ids'].to(device))
+                        batch_score, masked_token_logits = model(
+                             train_batch['input_ids'].to(device), train_batch['query_ids'].to(device), train_batch['doc_ids'].to(device), 
+                            train_batch['mask_pos'].to(device), 
+                            train_batch['input_mask'].to(device),train_batch['query_input_mask'].to(device),train_batch['doc_input_mask'].to(device),
+                            train_batch['segment_ids'].to(device)
+                            )
                         # max_token_id = torch.argmax(masked_token_logits, 1).detach().cpu().tolist()  # batch_size
                         # _, topk_indices = torch.topk(masked_token_logits, 10)
                         # topk_indices = topk_indices.detach().cpu().tolist()
@@ -437,7 +460,11 @@ def train(args, model, loss_fn, m_optim, m_scheduler, metric, train_loader, dev_
                     batch_score, _ = model(train_batch['input_ids'].to(device), train_batch['input_mask'].to(device))
                 elif args.task == "prompt_classification":
                     with sync_context():
-                        batch_score, masked_token_logits = model(train_batch['input_ids'].to(device), train_batch['mask_pos'].to(device), train_batch['input_mask'].to(device))
+                        batch_score, masked_token_logits = model(
+                            train_batch['input_ids'].to(device), train_batch['query_ids'].to(device), train_batch['doc_ids'].to(device), 
+                            train_batch['mask_pos'].to(device), 
+                            train_batch['input_mask'].to(device),train_batch['query_input_mask'].to(device),train_batch['doc_input_mask'].to(device)
+                            )
                 else:
                     raise ValueError('Task must be `ranking` or `classification`.')
             elif args.model == 'edrm':
@@ -991,7 +1018,9 @@ def main():
                     task=args.task,
                     pos_word_id=pos_word_id,
                     neg_word_id=neg_word_id,
-                    soft_prompt=args.soft_prompt
+                    soft_prompt=args.soft_prompt,
+                    prefix=args.prefix,
+                    suffix=args.suffix
                 )
                 model._model.resize_token_embeddings(len(tokenizer))
                 # model._model.embeddings.word_embeddings.weight[-100, :] = model._model.embeddings.word_embeddings.weight[-100, :]

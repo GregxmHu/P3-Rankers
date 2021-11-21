@@ -6,7 +6,7 @@ import torch.nn.functional as F
 import numpy as np
 import pickle
 
-from transformers import BertConfig, AutoModel, AutoModelForMaskedLM, AutoConfig
+from transformers import BertConfig, AutoModel, AutoModelForMaskedLM, AutoConfig,AutoTokenizer
 
 class BertPrompt(nn.Module):
     def __init__(
@@ -16,7 +16,9 @@ class BertPrompt(nn.Module):
         task: str = 'ranking',
         pos_word_id: int = 0,
         neg_word_id: int = 0,
-        soft_prompt: bool = False
+        soft_prompt: bool = False,
+        prefix:str=None,
+        suffix:str=None
     ) -> None:
         super(BertPrompt, self).__init__()
         self._pretrained = pretrained
@@ -25,86 +27,119 @@ class BertPrompt(nn.Module):
 
         self._config = AutoConfig.from_pretrained(self._pretrained)
         self._model = AutoModelForMaskedLM.from_pretrained(self._pretrained, config=self._config)
+        self._tokenizer=AutoTokenizer.from_pretrained(self._pretrained)
         self._pos_word_id = pos_word_id
         self._neg_word_id = neg_word_id
         self._soft_prompt = soft_prompt
         self.soft_embedding = None
 
         if self._soft_prompt:
-            #print("soft prompt")
-            torch.manual_seed(13)
-            self.soft_embedding = nn.Embedding(100, self._config.hidden_size)
-            #print(self.soft_embedding.weight.data)
-            self.model_embedding = self._model.get_input_embeddings()
-            self.soft_embedding.weight.data = self.model_embedding.weight.data[:100, :].clone().detach().requires_grad_(True)
-            #print(self.soft_embedding.weight.data)
+            self.prefix_soft_index,self.suffix_soft_index=eval(prefix),eval(suffix)
+            #[3,27569,10],[11167,10],[31484,17,10,1]
+            self.p_num,self.s_num=len(self.prefix_soft_index),len(self.suffix_soft_index)
+
+            self.prefix_soft_embedding_layer=nn.Embedding(
+                self.p_num,self._config.hidden_size
+                )
+            self.suffix_soft_embedding_layer=nn.Embedding(
+                self.s_num,self._config.hidden_size
+                )
+            self.normal_embedding_layer=self._model.get_input_embeddings()
+            self.prefix_soft_embedding_layer.weight.data=torch.stack(
+                [self.normal_embedding_layer.weight.data[i,:].clone().detach().requires_grad_(True) for i in self.prefix_soft_index]
+                )
+            self.suffix_soft_embedding_layer.weight.data=torch.stack(
+                [self.normal_embedding_layer.weight.data[i,:].clone().detach().requires_grad_(True) for i in self.suffix_soft_index]
+                )
+
+            self.prefix_soft_ids=torch.tensor(range(self.p_num))
+            self.suffix_soft_ids=torch.tensor(range(self.s_num))
+            self.mask_ids=torch.tensor([self._tokenizer.mask_token_id])
             for param in self._model.parameters():
                 param.requires_grad_(False)
+            #print("soft prompt")
             #torch.manual_seed(13)
-            self.new_lstm_head = nn.LSTM(
-                input_size = self._config.hidden_size,
-                hidden_size = self._config.hidden_size, # TODO P-tuning different in LAMA & FewGLUE
-                # TODO dropout different in LAMA and FewGLUE
-                num_layers=2,
-                bidirectional=True,
-                batch_first=True
-            )
+            #self.soft_embedding = nn.Embedding(100, self._config.hidden_size)
+            #print(self.soft_embedding.weight.data)
+            #self._model_embedding = self._model.get_input_embeddings()
+            #self.soft_embedding.weight.data = self._model_embedding.weight.data[:100, :].clone().detach().requires_grad_(True)
+            #print(self.soft_embedding.weight.data)
+            #for param in self._model.parameters():
+            #    param.requires_grad_(False)
+            #torch.manual_seed(13)
+            #self.new_lstm_head = nn.LSTM(
+            #    input_size = self._config.hidden_size,
+            #    hidden_size = self._config.hidden_size, # TODO P-tuning different in LAMA & FewGLUE
+            #    # TODO dropout different in LAMA and FewGLUE
+            #    num_layers=2,
+            #    bidirectional=True,
+            #    batch_first=True
+            #)
             #print(self.new_lstm_head.all_weights[0][0][0])
             #torch.manual_seed(13)
-            self.new_mlp_head = nn.Sequential(
-                nn.Linear(2*self._config.hidden_size, self._config.hidden_size),
-                nn.ReLU(),
-                nn.Linear(self._config.hidden_size, self._config.hidden_size)
-            )
-            #print(self.new_mlp_head[2].weight.data)
-        # if fix_parameters:
-        #     self._model.eval()
+            #self.new_mlp_head = nn.Sequential(
+            #    nn.Linear(2*self._config.hidden_size, self._config.hidden_size),
+            #    nn.ReLU(),
+            #    nn.Linear(self._config.hidden_size, self._config.hidden_size)
+            #)
 
-        # if self._task == 'ranking':
-        #     # self._dense = nn.Linear(self._config.hidden_size, 1)
-        #     pass
-        # elif self._task == 'classification':
-        #     # self._dense = nn.Linear(self._config.hidden_size, 2)
-        #     pass
-        # else:
-        #     raise ValueError('Task must be `ranking` or `classification`.')
+    def forward(
+        self, input_ids: torch.Tensor, query_ids: torch.Tensor, doc_ids: torch.Tensor, 
+        masked_token_pos: torch.Tensor, 
+        input_mask: torch.Tensor = None, query_input_mask: torch.Tensor = None, doc_input_mask: torch.Tensor = None, 
+        segment_ids: torch.Tensor = None) -> Tuple[torch.Tensor, torch.Tensor]:
 
-    def forward(self, input_ids: torch.Tensor, masked_token_pos: torch.Tensor, input_mask: torch.Tensor = None, segment_ids: torch.Tensor = None) -> Tuple[torch.Tensor, torch.Tensor]:
-        # if self._fix_para:
-        #     with torch.no_grad():
-        #         output = self._model(input_ids, attention_mask = input_mask, token_type_ids = segment_ids)[0].detach()
+        batch_size=input_ids.shape[0]
         if self._soft_prompt:
-            # print(input_ids)
-            # input()
-            mask = torch.zeros_like(input_ids)
-            normal_ids = torch.where(input_ids >= 0, input_ids, mask)
-            soft_prompt_ids = -torch.where(input_ids < 0, input_ids, mask)
-            normal_embeddings = self.model_embedding(normal_ids)
-            soft_prompt_embeddings = self.soft_embedding(soft_prompt_ids)
-            soft_prompt_embeddings = self.new_lstm_head(soft_prompt_embeddings)[0]
-            soft_prompt_embeddings = self.new_mlp_head(soft_prompt_embeddings)
-            input_embeddings = torch.where((input_ids >= 0).unsqueeze(-1), normal_embeddings, soft_prompt_embeddings)
-            # print(input_embeddings)
-            # input()
-            #print(input_embeddings[0][40][0])
-            output = self._model(inputs_embeds=input_embeddings,attention_mask = input_mask,token_type_ids = segment_ids)[0]
-            #output=self._model(inputs_embeds=input_embeddings)[0]
-            # output = self.new_lstm_head(output)[0]
-
-            # print(output)
-            # input()
+            #mask = torch.zeros_like(input_ids)
+            #normal_ids = torch.where(input_ids >= 0, input_ids, mask)
+            #soft_prompt_ids = -torch.where(input_ids < 0, input_ids, mask)
+            #normal_embeddings = self._model_embedding(normal_ids)
+            #soft_prompt_embeddings = self.soft_embedding(soft_prompt_ids)
+            #soft_prompt_embeddings = self.new_lstm_head(soft_prompt_embeddings)[0]
+            #soft_prompt_embeddings = self.new_mlp_head(soft_prompt_embeddings)
+            #input_embeddings = torch.where((input_ids >= 0).unsqueeze(-1), normal_embeddings, soft_prompt_embeddings)
+            #output = self._model(inputs_embeds=input_embeddings,attention_mask = input_mask,token_type_ids = segment_ids)[0]
+            prefix_soft_ids=torch.stack([self.prefix_soft_ids for i in range(batch_size)]).to(input_ids.device)
+            mask_ids=torch.stack([self.mask_ids for i in range(batch_size)]).to(input_ids.device)
+            suffix_soft_ids=torch.stack([self.suffix_soft_ids for i in range(batch_size)]).to(input_ids.device)
+            
+            prefix_soft_embeddings=self.prefix_soft_embedding_layer(prefix_soft_ids)
+            suffix_soft_embeddings=self.suffix_soft_embedding_layer(suffix_soft_ids)
+            
+            query_embeddings=self.normal_embedding_layer(query_ids)
+            doc_embeddings=self.normal_embedding_layer(doc_ids)
+            mask_embeddings=self.normal_embedding_layer(mask_ids)
+            
+            input_embeddings=torch.cat(
+                [query_embeddings,prefix_soft_embeddings,mask_embeddings,suffix_soft_embeddings,doc_embeddings],
+                dim=1
+                )
+            
+            prefix_soft_attention_mask=torch.ones(batch_size,self.p_num).to(input_ids.device)
+            mask_attention_mask=torch.ones(batch_size,1).to(input_ids.device)
+            suffix_soft_attention_mask=torch.ones(batch_size,self.s_num).to(input_ids.device)
+            
+            attention_mask=torch.cat(
+                [query_input_mask,prefix_soft_attention_mask,mask_attention_mask,suffix_soft_attention_mask,doc_input_mask],
+                dim=1
+                )
+            output = self._model(
+                inputs_embeds=input_embeddings,attention_mask = attention_mask,token_type_ids = segment_ids
+                )[0]
+            masked_token_pos=torch.full(masked_token_pos.shape,50+self.p_num).to(input_ids.device)
         else:
             output = self._model(input_ids, attention_mask = input_mask, token_type_ids = segment_ids)[0]
         if self._mode == 'cls':
-            # logits = output[0][:, 0, :]
+
             pass
         elif self._mode == 'pooling':
-            # logits = output[1]
+
             pass
         else:
             raise ValueError('Mode must be `cls` or `pooling`.')
         
-        # print(masked_token_pos)
+        
 
         vocab_size = output.shape[2]
         masked_token_pos = torch.unsqueeze(masked_token_pos, 1)
@@ -112,15 +147,10 @@ class BertPrompt(nn.Module):
         masked_token_pos = torch.stack([masked_token_pos] * vocab_size, 2)
         masked_token_pos = torch.squeeze(masked_token_pos, 3)
         masked_token_logits = torch.gather(output, 1, masked_token_pos)
-        # print(masked_token_logits.shape)
-        #masked_token_logits = masked_token_logits.squeeze()  # batch_size * vocab_size
-        #rel_and_irrel_logits = masked_token_logits[:, [self._neg_word_id, self._pos_word_id]]
-
+        
         masked_token_logits=masked_token_logits.reshape(-1,vocab_size)
         rel_and_irrel_logits = masked_token_logits[:, [self._neg_word_id, self._pos_word_id]]
-        # print()
-        # rel_and_irrel_logits = F.softmax(rel_and_irrel_logits, dim=1)
-        # print(rel_and_irrel_logits)
+        
 
         return rel_and_irrel_logits, masked_token_logits
 
