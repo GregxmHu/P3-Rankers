@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import pickle
 class t5(nn.Module):
-    def __init__(self,checkpoint:str,soft_prompt:bool,soft_sentence:int,prefix:str,infix:str,suffix:str):
+    def __init__(self,checkpoint:str,original_t5:bool,soft_prompt:bool,prefix:str,infix:str,suffix:str):
         super(t5,self).__init__()
         self.config=T5Config.from_pretrained(checkpoint)       
         self.t5=T5ForConditionalGeneration.from_pretrained(checkpoint,config=self.config)  
@@ -13,6 +13,7 @@ class t5(nn.Module):
         self.soft_embedding_layer=None   
         self.normal_embedding_layer=self.t5.get_input_embeddings()
         self.soft_prompt=soft_prompt
+        self.original_t5=original_t5
         if soft_prompt: 
             
             self.prefix_soft_index,self.infix_soft_index,self.suffix_soft_index=eval(prefix),eval(infix),eval(suffix)
@@ -44,7 +45,7 @@ class t5(nn.Module):
                 param.requires_grad_(False)
         
 
-    def forward(self,input_ids,attention_mask,query_ids,doc_ids,query_attention_mask,doc_attention_mask):
+    def forward(self,input_ids,attention_mask,query_ids,doc_ids,query_attention_mask,doc_attention_mask,labels):
         batch_size=input_ids.shape[0]
         decoder_input_ids=torch.zeros(batch_size,1,dtype=int).to(input_ids.device)
         if self.soft_prompt:
@@ -74,15 +75,41 @@ class t5(nn.Module):
                 [prefix_soft_attention_mask,query_attention_mask,infix_soft_attention_mask,doc_attention_mask,suffix_soft_attention_mask],
                 dim=1
                 )
-            output=self.t5(
-                inputs_embeds=input_embeddings,decoder_input_ids=decoder_input_ids,attention_mask=attention_mask,return_dict=True
-                )
+            if self.original_t5:
+                output=self.t5(
+                    inputs_embeds=input_embeddings,
+                    attention_mask=attention_mask,
+                    labels=labels,
+                     return_dict=True
+                    )
+            else:
+                output=self.t5(
+                    inputs_embeds=input_embeddings,
+                    decoder_input_ids=decoder_input_ids,
+                    attention_mask=attention_mask,
+                    return_dict=True
+                    )
         else:
-            
-            output=self.t5(input_ids=input_ids,decoder_input_ids=decoder_input_ids,attention_mask=attention_mask,return_dict=True)
+            if self.original_t5:
+                output=self.t5(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    labels=labels,
+                    return_dict=True
+                )
+            else:
+                output=self.t5(
+                    input_ids=input_ids,
+                    decoder_input_ids=decoder_input_ids,
+                    attention_mask=attention_mask,
+                    return_dict=True
+                )
         logits=output.logits
         batch_score=logits[:,0,[6136,1176]] 
-        return batch_score
+        batch_loss=None
+        if self.original_t5:
+            batch_loss=output.loss
+        return batch_score,batch_loss
 
     
     

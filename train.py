@@ -36,23 +36,22 @@ def test(args, model, metric, test_loader, device,tokenizer):
         else:
             query_id, doc_id, label = test_batch['query_id'], test_batch['doc_id'], test_batch['label']
         with torch.no_grad():
-            if args.original_t5:
-                batch_logits = model(                        
-                        input_ids=test_batch['input_ids'].to(device), 
-                        attention_mask=test_batch['attention_mask'].to(device), 
-                        labels=test_batch["labels"].to(device),
-                        return_dict=True
-                    ).logits
-                batch_score=batch_logits[:,0,[6136,1176]]
-                #print(batch_score.shape)
-            elif args.model== 't5':
-                batch_score=model(
+            #if args.original_t5:
+            #    batch_score,_ = model(                        
+            #            input_ids=test_batch['input_ids'].to(device), 
+            #            attention_mask=test_batch['attention_mask'].to(device), 
+            #            labels=test_batch["labels"].to(device),
+            #            return_dict=True
+            #        )
+            if args.model== 't5':
+                batch_score,_=model(
                         input_ids=test_batch['input_ids'].to(device), 
                         attention_mask=test_batch['attention_mask'].to(device),
                         query_ids=test_batch['query_ids'].to(device), 
                         doc_ids=test_batch['doc_ids'].to(device),
                         query_attention_mask=test_batch['query_attention_mask'].to(device),
-                        doc_attention_mask=test_batch['doc_attention_mask'].to(device)
+                        doc_attention_mask=test_batch['doc_attention_mask'].to(device),
+                        labels=test_batch['labels'].to(device)
                 )
             elif args.model == 'bert':
                 if args.task.startswith("prompt"):
@@ -110,23 +109,24 @@ def dev(args, model, metric, dev_loader, device,tokenizer):
         else:
             query_id, doc_id, label = dev_batch['query_id'], dev_batch['doc_id'], dev_batch['label']
         with torch.no_grad():
-            if args.original_t5:
-                batch_logits = model(                        
-                        input_ids=dev_batch['input_ids'].to(device), 
-                        attention_mask=dev_batch['attention_mask'].to(device), 
-                        labels=dev_batch["labels"].to(device),
-                        return_dict=True
-                    ).logits
-                batch_score=batch_logits[:,0,[6136,1176]]
+            #if args.original_t5:
+            #    batch_logits = model(                        
+            #            input_ids=dev_batch['input_ids'].to(device), 
+            #            attention_mask=dev_batch['attention_mask'].to(device), 
+            #            labels=dev_batch["labels"].to(device),
+            #            return_dict=True
+             #       ).logits
+             #   batch_score=batch_logits[:,0,[6136,1176]]
                 #print(batch_score.shape)
-            elif args.model== 't5':
-                batch_score=model(
+            if args.model== 't5':
+                batch_score,_=model(
                         input_ids=dev_batch['input_ids'].to(device), 
                         attention_mask=dev_batch['attention_mask'].to(device),
                         query_ids=dev_batch['query_ids'].to(device), 
                         doc_ids=dev_batch['doc_ids'].to(device),
                         query_attention_mask=dev_batch['query_attention_mask'].to(device),
-                        doc_attention_mask=dev_batch['doc_attention_mask'].to(device)
+                        doc_attention_mask=dev_batch['doc_attention_mask'].to(device),
+                        labels=dev_batch['labels'].to(device)
                 )
             elif args.model == 'bert':
                 if args.task.startswith("prompt"):
@@ -401,23 +401,24 @@ def train(args, model, loss_fn, m_optim, m_scheduler, metric, train_loader, dev_
             else:
                 label = train_batch['label']
             sync_context = model.no_sync if (args.local_rank != -1 and (step+1) % args.gradient_accumulation_steps != 0) else nullcontext
-            if args.original_t5:
+            #if args.original_t5:
+            #    with sync_context():
+            #        batch_loss = model(                        
+            #            input_ids=train_batch['input_ids'].to(device), 
+            #            attention_mask=train_batch['attention_mask'].to(device), 
+            #            labels=train_batch["labels"].to(device),
+            #            return_dict=True
+            #        ).loss
+            if args.model == 't5':
                 with sync_context():
-                    batch_loss = model(                        
-                        input_ids=train_batch['input_ids'].to(device), 
-                        attention_mask=train_batch['attention_mask'].to(device), 
-                        labels=train_batch["labels"].to(device),
-                        return_dict=True
-                    ).loss
-            elif args.model == 't5':
-                with sync_context():
-                    batch_score = model(
+                    batch_score,batch_loss = model(
                         input_ids=train_batch['input_ids'].to(device), 
                         attention_mask=train_batch['attention_mask'].to(device),
                         query_ids=train_batch['query_ids'].to(device), 
                         doc_ids=train_batch['doc_ids'].to(device),
                         query_attention_mask=train_batch['query_attention_mask'].to(device),
-                        doc_attention_mask=train_batch['doc_attention_mask'].to(device)
+                        doc_attention_mask=train_batch['doc_attention_mask'].to(device),
+                        labels=train_batch['labels'].to(device)
                         )
             elif args.model == 'bert':
                 if args.task == 'ranking':
@@ -1000,7 +1001,7 @@ def main():
         train_sampler = None
 
     if args.model == "t5":
-        model = om.models.t5(args.pretrain,args.soft_prompt,args.soft_sentence,args.prefix,args.infix,args.suffix) if not args.original_t5 else T5ForConditionalGeneration.from_pretrained(args.pretrain)
+        model = om.models.t5(args.pretrain,args.original_t5,args.soft_prompt,args.prefix,args.infix,args.suffix) 
     elif args.model == 'bert' or args.model == 'roberta':
         if args.maxp:
             model = om.models.BertMaxP(
