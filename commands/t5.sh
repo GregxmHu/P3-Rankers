@@ -17,23 +17,24 @@ NEG=1
 model="t5-v11-soft-prompt"
 #ckpt="/mnt/101_data1/private/hxm/pretrained_models/t5-lm-adapt-large"
 ckpt="/mnt/101_data1/private/hxm/pretrained_models/t5-v11-large"
+dir_prefix="$dir_prefix"
 python -m torch.distributed.launch \
          --nproc_per_node=4 \
          --master_port=10627  \
         train.py \
         -task classification  \
         -model t5  \
-        -qrels /mnt/101_data1/private/hxm/promptir/collections/msmarco-passage/qrels.train.tsv     \
-        -train /mnt/101_data1/private/hxm/promptir/dataset/msmarco/train/$Q-q-$NEG-n.jsonl \
-        -dev /mnt/101_data1/private/hxm/promptir/dataset/msmarco/dev/50-q.jsonl  \
-        -test /mnt/101_data1/private/hxm/promptir/dataset/msmarco/test/all-q.jsonl  \
+        -qrels $dir_prefix/collections/msmarco-passage/qrels.train.tsv     \
+        -train $dir_prefix/dataset/msmarco/train/$Q-q-$NEG-n.jsonl \
+        -dev $dir_prefix/dataset/msmarco/dev/50-q.jsonl  \
+        -test $dir_prefix/dataset/msmarco/test/all-q.jsonl  \
         -max_input 80000000  \
         -vocab $ckpt          \
         -pretrain $ckpt  \
-        -save /mnt/101_data1/private/hxm/promptir/checkpoints/$model/q$Q-n-$NEG/  \
-        -res /mnt/101_data1/private/hxm/promptir/results/$model/q$Q-n-$NEG.trec  \
-        -test_res /mnt/101_data1/private/hxm/promptir/results/$model/test_q$Q-n-$NEG.trec  \
-        --log_dir=/mnt/101_data1/private/hxm/promptir/logs/$model/q$Q-n-$NEG/  \
+        -save $dir_prefix/checkpoints/$model/q$Q-n-$NEG/  \
+        -res $dir_prefix/results/$model/q$Q-n-$NEG.trec  \
+        -test_res $dir_prefix/results/$model/test_q$Q-n-$NEG.trec  \
+        --log_dir=$dir_prefix/logs/$model/q$Q-n-$NEG/  \
         -metric mrr_cut_10  \
         -max_query_len 76  \
         -max_doc_len 290  \
