@@ -48,7 +48,7 @@ class t5Dataset(Dataset):
         #text='Query: ' + example["query"] + ' Document: ' + example["doc"]+" Relevant: "
         tokenized = self._tokenizer(text, padding="max_length", truncation=True, max_length=384)
         source_ids, source_mask = tokenized["input_ids"], tokenized["attention_mask"]
-        tokenized = self._tokenizer(self._label_mapping[example["label"]], padding="max_length", truncation=True, max_length=10)
+        tokenized = self._tokenizer(self._label_mapping[example["label"]], padding="max_length", truncation=True, max_length=2)
         target_ids = tokenized["input_ids"]
         target_ids = [
            (label if label != self._tokenizer.pad_token_id else -100) for label in target_ids

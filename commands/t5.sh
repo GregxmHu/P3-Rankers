@@ -1,21 +1,21 @@
 set -ex
-export CUDA_VISIBLE_DEVICES=0,6,3,4
+export CUDA_VISIBLE_DEVICES=3,6,0,4
 export OMP_NUM_THREADS=1
 LR=1
 
-MAX_STEPS=1000
-EPOCH=60000
+MAX_STEPS=50000
+EPOCH=300000
 
 Q='full'
-LOG_STEP=10
-EVAL_EVERY=100
-
+LOG_STEP=100
+EVAL_EVERY=1000
+ 
 BATCH_SIZE=8
 NEG=1
 
-model="test_v11-large"
-ckpt="/home/huxiaomeng/t5v11large"
-#ckpt="t5-large"
+model="real_softt5"
+#ckpt="/home/huxiaomeng/t5v11large"
+ckpt="t5-large"
 python -m torch.distributed.launch \
          --nproc_per_node=4 \
          --master_port=2127  \
@@ -41,18 +41,17 @@ python -m torch.distributed.launch \
         -lr $LR  \
         -eval_every $EVAL_EVERY  \
         -optimizer adamw  \
-        -dev_eval_batch_size  256   \
+        -dev_eval_batch_size  400   \
         -n_warmup_steps 0  \
         -logging_step $LOG_STEP  \
         --max_steps=$MAX_STEPS \
         -gradient_accumulation_steps 1 \
         --soft_sentence=""  \
-        --template="Query: <q> Document: <d> Relevant: "    \
+        --template="Task: Find the relevance between Query and Document. Query: <q> Document: <d> Relevant: "   \
         --prefix='[16107, 10, 2588, 8, 20208, 344, 3, 27569, 11, 11167, 5,3,27569,10]'   \
         --infix='[11167,10]'    \
         --suffix='[31484,17,10,1]'   \
-        --original_t5 \
-        #--soft_prompt   \
+        --soft_prompt   \
         
                                                                                                                                                                                                           
 
