@@ -1,26 +1,27 @@
 set -ex
-export CUDA_VISIBLE_DEVICES=4,5,6,7
+export CUDA_VISIBLE_DEVICES=0,3,4,6
 export OMP_NUM_THREADS=1
-LR=1
+LR=2e-5
 
 MAX_STEPS=3000
-EPOCH=300000
+EPOCH=30000
 
 Q=50
-LOG_STEP=50
-EVAL_EVERY=100
+LOG_STEP=10
+EVAL_EVERY=50
  
 BATCH_SIZE=2
 NEG=1
-
-#model="t5-lm-adapt-soft-prompt"
-model="t5-v11-soft-prompt"
-#ckpt="/mnt/101_data1/private/hxm/pretrained_models/t5-lm-adapt-large"
-ckpt="/mnt/101_data1/private/hxm/pretrained_models/t5-v11-large"
-dir_prefix="$dir_prefix"
+TYPE="mono"
+#model="t5-lm-adapt-large-$TYPE-prompt"
+model="t5-v11-large-$TYPE-prompt"
+#ckpt="/data/private/huxiaomeng/pretrained_models/t5-lm-adapt-large"
+ckpt="/data/private/huxiaomeng/pretrained_models/t5-v11-large"
+#ckpt="t5-large"
+dir_prefix="/data/private/huxiaomeng/promptir"
 python -m torch.distributed.launch \
          --nproc_per_node=4 \
-         --master_port=10627  \
+         --master_port=10617  \
         train.py \
         -task classification  \
         -model t5  \
@@ -43,17 +44,17 @@ python -m torch.distributed.launch \
         -lr $LR  \
         -eval_every $EVAL_EVERY  \
         -optimizer adamw  \
-        -dev_eval_batch_size  64   \
+        -dev_eval_batch_size  128   \
         -n_warmup_steps 0  \
         -logging_step $LOG_STEP  \
         --max_steps=$MAX_STEPS \
-        -gradient_accumulation_steps 4 \
+        -gradient_accumulation_steps 1 \
         --soft_sentence=""  \
-        --template="Task: Find the relevance between Query and Document. Query: <q> Document: <d> Relevant: "   \
+        --template=" Query: <q> Document: <d> Relevant: "   \
         --prefix='[16107, 10, 2588, 8, 20208, 344, 3, 27569, 11, 11167, 5,3,27569,10]'   \
         --infix='[11167,10]'    \
         --suffix='[31484,17,10,1]'   \
         --soft_prompt   \
-        
+        #--template="Task: Find the relevance between Query and Document. Query: <q> Document: <d> Relevant: "
                                                                                                                                                                                                           
 
