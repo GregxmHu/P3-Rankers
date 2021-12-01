@@ -391,7 +391,6 @@ def train(args, model, loss_fn, m_optim, m_scheduler, metric, train_loader, dev_
     for epoch in range(args.epoch):
         if args.local_rank != -1:
             train_sampler.set_epoch(epoch) # shuffle data for distributed
-            logger.warning("current gpu local_rank {}".format(args.local_rank))
 
         avg_loss = 0.0
         for step, train_batch in enumerate(train_loader):
@@ -640,7 +639,18 @@ def train(args, model, loss_fn, m_optim, m_scheduler, metric, train_loader, dev_
         for file in os.listdir(args.save):
             checkpoint=os.path.join(args.save,file)
             state=torch.load(checkpoint,map_location=device)
-            model.module.load_state_dict(state)
+            if args.model == 'bert':
+                st = {}
+                for k in state:
+                    if k.startswith('bert'):
+                        st['_model'+k[len('bert'):]] = state[k]
+                    elif k.startswith('classifier'):
+                        st['_dense'+k[len('classifier'):]] = state[k]
+                    else:
+                        st[k] = state[k]
+                model.module.load_state_dict(st)
+            else:
+                model.module.load_state_dict(state)
         dist.barrier()
         logger.info("doing inference.... at gpu:{}".format(args.local_rank))
         model.eval()
@@ -803,13 +813,13 @@ def main():
         else:
             dev_set = om.data.datasets.BertDataset(
                 dataset=args.dev,
-                tokenizer=tokenizer,
-                mode='dev',
-                query_max_len=args.max_query_len,
-                doc_max_len=args.max_doc_len,
-                max_input=args.max_input,
-               task=args.task,
-               template=args.template
+            tokenizer=tokenizer,
+            mode='dev',
+            query_max_len=args.max_query_len,
+            doc_max_len=args.max_doc_len,
+            max_input=args.max_input,
+            task=args.task,
+            template=args.template
             )
         logger.info('reading test data...')
         if args.maxp:
@@ -825,13 +835,13 @@ def main():
         else:
             test_set = om.data.datasets.BertDataset(
                 dataset=args.test,
-                tokenizer=tokenizer,
-                mode='test',
-                query_max_len=args.max_query_len,
-                doc_max_len=args.max_doc_len,
-                max_input=args.max_input,
-               task=args.task,
-               template=args.template
+            tokenizer=tokenizer,
+            mode='test',
+            query_max_len=args.max_query_len,
+            doc_max_len=args.max_doc_len,
+            max_input=args.max_input,
+            task=args.task,
+            template=args.template
             )
     elif args.model == 'roberta':
         if tokenizer is None:
