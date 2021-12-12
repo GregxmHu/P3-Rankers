@@ -690,7 +690,7 @@ def main():
     parser.add_argument('-vocab', type=str, default='allenai/scibert_scivocab_uncased')
     parser.add_argument('-ent_vocab', type=str, default='')
     parser.add_argument('-pretrain', type=str, default='allenai/scibert_scivocab_uncased')
-    parser.add_argument('-checkpoint', type=str, default=None)
+    parser.add_argument('-mnli_checkpoint', type=str, default=None)
     parser.add_argument('-res', type=str, default='./results/bert.trec')
     parser.add_argument('-test_res', type=str, default='./results/bert.trec')
     parser.add_argument('-metric', type=str, default='ndcg_cut_10')
@@ -984,7 +984,7 @@ def main():
             dataset=test_set,
             batch_size=args.batch_size * 16 if args.dev_eval_batch_size <= 0 else args.dev_eval_batch_size,
             shuffle=False,
-            num_workers=8,
+            num_workers=16,
             sampler=test_sampler
         )
         dist.barrier()
@@ -1106,20 +1106,6 @@ def main():
             task='classification'
         )
 
-    if args.checkpoint is not None:
-        state_dict = torch.load(args.checkpoint)
-        if args.model == 'bert':
-            st = {}
-            for k in state_dict:
-                if k.startswith('bert'):
-                    st['_model'+k[len('bert'):]] = state_dict[k]
-                elif k.startswith('classifier'):
-                    st['_dense'+k[len('classifier'):]] = state_dict[k]
-                else:
-                    st[k] = state_dict[k]
-            model.load_state_dict(st)
-        else:
-            model.load_state_dict(state_dict)
 
     # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     device = args.device
@@ -1154,6 +1140,13 @@ def main():
 
 
     model.to(device)
+    if args.mnli_checkpoint is not None and args.model=="t5":
+        st = torch.load(args.mnli_checkpoint,map_location=device)
+        st['suffix_soft_embedding_layer.weight']=model.state_dict()['suffix_soft_embedding_layer.weight'].clone().detach()
+        st['infix_soft_embedding_layer.weight']=model.state_dict()['infix_soft_embedding_layer.weight'].clone().detach()
+        st['prefix_soft_embedding_layer.weight']=model.state_dict()['prefix_soft_embedding_layer.weight'].clone().detach()
+        model.load_state_dict(st)
+    dist.barrier()
     if args.reinfoselect:
         policy.to(device)
     loss_fn.to(device)
@@ -1170,7 +1163,6 @@ def main():
             find_unused_parameters=True,
         )
         dist.barrier()
-
     model.zero_grad()
     model.train()
     #print(model.prefix_soft_embedding_layer.weight.data.requires_grad)
