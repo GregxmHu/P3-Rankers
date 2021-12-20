@@ -690,7 +690,7 @@ def main():
     parser.add_argument('-vocab', type=str, default='allenai/scibert_scivocab_uncased')
     parser.add_argument('-ent_vocab', type=str, default='')
     parser.add_argument('-pretrain', type=str, default='allenai/scibert_scivocab_uncased')
-    parser.add_argument('-mnli_checkpoint', type=str, default=None)
+    parser.add_argument('-mnliornq_checkpoint', type=str, default=None)
     parser.add_argument('-res', type=str, default='./results/bert.trec')
     parser.add_argument('-test_res', type=str, default='./results/bert.trec')
     parser.add_argument('-metric', type=str, default='ndcg_cut_10')
@@ -1140,12 +1140,14 @@ def main():
 
 
     model.to(device)
-    if args.mnli_checkpoint is not None and args.model=="t5":
-        st = torch.load(args.mnli_checkpoint,map_location=device)
+    ckpt=args.mnliornq_checkpoint
+    if ckpt is not None and args.model=="t5":
+        st = torch.load(ckpt,map_location=device)
         st['suffix_soft_embedding_layer.weight']=model.state_dict()['suffix_soft_embedding_layer.weight'].clone().detach()
         st['infix_soft_embedding_layer.weight']=model.state_dict()['infix_soft_embedding_layer.weight'].clone().detach()
         st['prefix_soft_embedding_layer.weight']=model.state_dict()['prefix_soft_embedding_layer.weight'].clone().detach()
         model.load_state_dict(st)
+    logger.info("load mnliornq-pretrained checkpoint at gpu:{}...".format(args.local_rank))
     dist.barrier()
     if args.reinfoselect:
         policy.to(device)

@@ -1,34 +1,34 @@
 
 set -ex
-export CUDA_VISIBLE_DEVICES=0,2
+export CUDA_VISIBLE_DEVICES=6,7,4,2
 export OMP_NUM_THREADS=1
 LR=2e-5
 EPOCH=30000
 
 
-MAX_STEPS=5000
-Q=1000
+MAX_STEPS=3000
+Q=5
 NEG=1
 LOG_STEP=100
-EVAL_EVERY=500
+EVAL_EVERY=300
 BATCH_SIZE=8
-model="bert-large-manual-prompt"
+model="bert-large-auto-prompt"
 ckpt="/data/private/huxiaomeng/pretrained_models/bert-large"
 dir_path="/data/private/huxiaomeng/promptir"
 python -m torch.distributed.launch \
---nproc_per_node=2 \
---master_port=3119 \
+--nproc_per_node=4 \
+--master_port=2119 \
 train.py \
 -task prompt_classification \
 -model bert \
 -qrels $dir_path/collections/msmarco-passage/qrels.train.tsv     \
 -train $dir_path/dataset/msmarco/train/$Q-q-$NEG-n.jsonl \
--dev $dir_path/dataset/msmarco/dev/500-q.jsonl  \
+-dev $dir_path/dataset/msmarco/dev/5-q.jsonl  \
 -test $dir_path/dataset/msmarco/test/all-q.jsonl  \
 -max_input 80000000 \
 -vocab $ckpt  \
 -pretrain $ckpt  \
--metric mrr_cut_10  \
+-metric mrr_cut_100  \
 -max_query_len 50  \
 -max_doc_len 400 \
 -epoch $EPOCH  \
@@ -46,10 +46,15 @@ train.py \
 --max_steps=$MAX_STEPS  \
 --pos_word="relevant"  \
 --neg_word="irrelevant"  \
---template='<q> is [MASK] (relevant|irrelevant) to <d>'  \
--gradient_accumulation_steps 2  \
+--template='<q>? Is this [MASK] to your situation? <d>'  \
+-gradient_accumulation_steps 1  \
 --prefix='[133, 986, 3645, 16, 10, 25860, 4, 48360, 16, 1437]'   \
 --infix='[11167,10]'    \
 --suffix='[560, 22053, 257, 991, 3999, 4, 20, 220, 3645, 16, 10, 3780, 4]'   \
 --soft_sentence=""  \
+
+
+
+
+
 
