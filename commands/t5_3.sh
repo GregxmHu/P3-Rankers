@@ -2,13 +2,13 @@
 set -ex
 export CUDA_VISIBLE_DEVICES=0,1,3,7
 export OMP_NUM_THREADS=1
-LR=1e-3
+LR=1
 
 MAX_STEPS=3000
 EPOCH=300000
 
 
-Q=50
+Q=5
 LOG_STEP=100
 EVAL_EVERY=300
  
@@ -52,7 +52,7 @@ python -m torch.distributed.launch \
         -seed $seed    \
         -qrels $dir_prefix/collections/msmarco-passage/qrels.train.tsv     \
         -train $dir_prefix/dataset/msmarco/train/$Q-q-$NEG-n.jsonl \
-        -dev $dir_prefix/dataset/msmarco/dev/50-q.jsonl  \
+        -dev $dir_prefix/dataset/msmarco/dev/5-q.jsonl  \
         -test $dir_prefix/dataset/msmarco/test/all-q.jsonl  \
         -max_input 80000000  \
         -vocab $ckpt          \

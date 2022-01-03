@@ -1,32 +1,32 @@
 
 set -ex
-export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+export CUDA_VISIBLE_DEVICES=6,7
 export OMP_NUM_THREADS=1
-LR=1
+LR=1e-3
 EPOCH=300000
 
 NEG_WORD=" irrelevant"
 POS_WORD=" relevant"
 
-MAX_STEPS=5000
-Q=1000
+MAX_STEPS=1
+Q=$1
 NEG=1
 LOG_STEP=100
 EVAL_EVERY=100
-BATCH_SIZE=4
-model="test_roberta"
-ckpt="/mnt/101_data1/private/hxm/pretrained_models/roberta-large"
+BATCH_SIZE=2
+model="roberta-large-soft-prompt"
+ckpt="/data/private/huxiaomeng/pretrained_models/roberta-large"
 
 python -m torch.distributed.launch \
---nproc_per_node=8 \
+--nproc_per_node=2 \
 --master_port=3119 \
 train.py \
 -task prompt_classification \
 -model roberta \
--qrels /mnt/101_data1/private/hxm/promptir/collections/msmarco-passage/qrels.train.tsv     \
--train /mnt/101_data1/private/hxm/promptir/dataset/msmarco/train/$Q-q-$NEG-n.jsonl \
--dev /mnt/101_data1/private/hxm/promptir/dataset/msmarco/dev/500-q.jsonl  \
--test /mnt/101_data1/private/hxm/promptir/dataset/msmarco/test/all-q.jsonl  \
+-qrels /data/private/huxiaomeng/promptir/collections/msmarco-passage/qrels.train.tsv     \
+-train /data/private/huxiaomeng/promptir/dataset/msmarco/train/$Q-q-$NEG-n.jsonl \
+-dev /data/private/huxiaomeng/promptir/dataset/msmarco/dev/5-q.jsonl  \
+-test /data/private/huxiaomeng/promptir/dataset/msmarco/test/all-q.jsonl  \
 -max_input 80000000 \
 -vocab $ckpt  \
 -pretrain $ckpt  \
@@ -38,13 +38,13 @@ train.py \
 -lr $LR  \
 -eval_every $EVAL_EVERY  \
 -optimizer adamw   \
--dev_eval_batch_size 42  \
+-dev_eval_batch_size 200  \
 -n_warmup_steps 0  \
 -logging_step $LOG_STEP  \
--save /mnt/101_data1/private/hxm/promptir/checkpoints/$model/q$Q-n-$NEG/  \
--res /mnt/101_data1/private/hxm/promptir/results/$model/q$Q-n-$NEG.trec  \
--test_res /mnt/101_data1/private/hxm/promptir/results/$model/test_q$Q-n-$NEG.trec  \
---log_dir=/mnt/101_data1/private/hxm/promptir/logs/$model/q$Q-n-$NEG/  \
+-save /data/private/huxiaomeng/promptir/checkpoints/$model/q$Q-n-$NEG/  \
+-res /data/private/huxiaomeng/promptir/results/$model/q$Q-n-$NEG.trec  \
+-test_res /data/private/huxiaomeng/promptir/results/$model/test_q$Q-n-$NEG.trec  \
+--log_dir=/data/private/huxiaomeng/promptir/logs/$model/q$Q-n-$NEG/  \
 --max_steps=$MAX_STEPS  \
 --pos_word=" relevant"  \
 --neg_word=" irrelevant"  \

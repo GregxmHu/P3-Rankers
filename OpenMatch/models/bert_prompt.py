@@ -125,11 +125,11 @@ class BertPrompt(nn.Module):
                 dim=1
                 )
             output = self._model(
-                inputs_embeds=input_embeddings,attention_mask = attention_mask,token_type_ids = segment_ids
+                inputs_embeds=input_embeddings,attention_mask = attention_mask
                 )[0]
             masked_token_pos=torch.full(masked_token_pos.shape,50+self.p_num).to(input_ids.device)
         else:
-            output = self._model(input_ids, attention_mask = input_mask, token_type_ids = segment_ids)[0]
+            output = self._model(input_ids, attention_mask = input_mask)[0]
         if self._mode == 'cls':
 
             pass

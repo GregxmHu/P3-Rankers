@@ -678,6 +678,7 @@ def main():
     parser.add_argument('-task', type=str, default='ranking')
     parser.add_argument('-ranking_loss', type=str, default='margin_loss')
     parser.add_argument('-model', type=str, default='bert')
+    parser.add_argument('-seed', type=int, default=13)
     parser.add_argument('-optimizer', type=str, default='adam')
     parser.add_argument('-reinfoselect', action='store_true', default=False)
     parser.add_argument('-reset', action='store_true', default=False)
@@ -728,7 +729,7 @@ def main():
     parser.add_argument("--max_steps", type=int)
     
     args = parser.parse_args()
-    set_seed(13)
+    set_seed(args.seed)
     set_dist_args(args) # get local cpu/gpu device
     #print(args.template)
     if args.log_dir is not None:
